@@ -1,98 +1,135 @@
+#!/usr//bin/python
 '''
 Connects to Pivotal Tracker and generates the release notes for the current iteration
-@author: Sam K.
+@author: Karl C.
 '''
-import urllib2, sys
-from xml.dom import minidom
+import urllib2
+import sys
+
+import json
+
+import Config
+import datetime
+import argparse
+
 
 '''
-Prints all stories of a specific type in a formatted manner "[Pivotal Tracker-$ID] - $NAME
 @param fp: The file pointer to use
 @param story: Story DOM object
 @param story_type: type of story {bug, chore, feature}  
-'''    
-def printStories(fp, story, storyType):
-    validStoryTypes = ['feature', 'bug', 'chore']   #Valid story types
-    
+'''
+
+
+def printStories(fp, stories, storyType):
+    validStoryTypes = ['feature', 'bug', 'chore']
+
+    fp.write("%sS\n" % storyType.upper())
+    fp.write("-" * (storyType.__len__() + 1))
+    fp.write("\n")
+
     if storyType in validStoryTypes:
-        s_type = story.getElementsByTagName("story_type")[0].firstChild.data
-        
-        if s_type == storyType: 
-            s_id = story.getElementsByTagName('id')[0].firstChild.data
-            s_name = story.getElementsByTagName('name')[0].firstChild.data
-            fp.write("[Pivotal Tracker ID-%s] - %s\n" % (s_id, s_name))
-        else:
-            return
-        
-        return
-    else:
-        print "Invalid story type."
-        sys.exit(1)
+        for story in stories:
+            s_type = story.get('story_type')
+            if s_type == storyType:
+                s_id = story.get('id')
+                s_name = story.get('name')
+                s_url = story.get('url')
+                fp.write("+ [#%s](%s) - %s \n" % (s_id, s_url, s_name))
+
 
 '''
 Gets total iteration points 
 @param stories: Stories DOM object 
 @return total_points: total iteration points
-''' 
+'''
+
+
 def getIterationPoints(stories):
-    iter_points = 0 
-    
+    iter_points = 0
+
     for story in stories:
-        s_type = story.getElementsByTagName("story_type")[0].firstChild.data
-        
+        s_type = story.get('story_type')
+
         if s_type == "feature":
-            iter_points += int(story.getElementsByTagName("estimate")[0].firstChild.data)
+            iter_points += int(story.get('estimate'))
 
     return iter_points
 
-###################################
 
-PROJECT_ID = "130837"                           # Pivotal Tracker IOU Project ID
-TOKEN = "d383366a2fef4c33cd842d0545d6cfca"      # Pivotal Tracker IOU Token
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("project", help='The Project ID that you want to create release notes for.')
+    parser.add_argument("-c", "--config", help="The configuration file to use [pivotal.config by default]")
+    parser.add_argument("-o", "--ofile", help="The output file to write to [stdout by default]")
+    args = parser.parse_args()
 
-# API URL to get current iteration
-#url = "https://www.pivotaltracker.com/services/v3/projects/%s/iterations/done?offset=-1" % PROJECT_ID 
-url = "https://www.pivotaltracker.com/services/v3/projects/%s/iterations/current" % PROJECT_ID
+    configfile = 'pivotal.config'
+    if args.config:
+        configfile = args.config
 
-req = urllib2.Request(url, None, {'X-TrackerToken': TOKEN})
-response = urllib2.urlopen(req)
-dom = minidom.parseString(response.read())
+    config = Config.Config(configfile)
 
-# Get current iteration and all stories under it
-iteration = dom.getElementsByTagName('iteration')[0]
-stories = iteration.getElementsByTagName('story')
+    project_id = args.project
+    if args.ofile:
+        fp = open(args.ofile, 'w')
+    else:
+        fp = sys.stdout
 
-fp = open('release-notes.txt','w')
+    token = config.sectionmap("pivotal")['app_token']
+    iterations_url = config.sectionmap("pivotal")['iteration_url'] % project_id
+    project_url = config.sectionmap("pivotal")['project_url'] % project_id
 
-fp.write("ITERATION DETAILS:\n")
-fp.write("=================\n\n")
-fp.write("Iteration Number: %s\n" % iteration.getElementsByTagName('number')[0].firstChild.data)
-fp.write("Iteration Start: %s\n" % iteration.getElementsByTagName('start')[0].firstChild.data)
-fp.write("Iteration Finish: %s\n" % iteration.getElementsByTagName('finish')[0].firstChild.data)
-fp.write("Team Strength: %s\n" % iteration.getElementsByTagName('team_strength')[0].firstChild.data)
-fp.write("Number of Stories: %s\n" % len(stories)) 
-fp.write("Iteration Points: %s\n" % getIterationPoints(stories)) 
-fp.write("\n\n")
+    #project information
+    proj_req = urllib2.Request(project_url, None, {'X-TrackerToken': token})
 
-#print Bugs
-fp.write("BUGS:\n")
-fp.write("======\n\n")
-for story in stories:
-    printStories(fp, story, "bug")
-fp.write("\n\n")
-        
-#print Features
-fp.write("FEATURES:\n")
-fp.write("==========\n\n")
-for story in stories:
-    printStories(fp, story, "feature")
-fp.write("\n\n")
+    try:
+        proj_response = urllib2.urlopen(proj_req)
+        project = json.loads(proj_response.read())
+    except urllib2.HTTPError as err:
+        sys.stderr.write("%s\n" % str(err))
+        jsonErr = json.loads(err.read())
+        sys.stderr.write("%s - %s\n" % (jsonErr.get('error'), jsonErr.get('general_problem')))
+        sys.stderr.write("%s\n" % jsonErr.get('possible_fix'))
+        sys.exit(2)
 
-#print Chores
-fp.write("CHORES:\n")
-fp.write("=======\n\n")
-for story in stories:
-    printStories(fp, story, "chore")
-fp.write("\n\n")
+    fp.write('# PROJECT DETAILS\n')
+    fp.write('## Project Name: %s\n' % project.get('name'))
+    fp.write('###### %s\n' % project.get('description'))
+    fp.write('\n\n')
 
-fp.close()
+    req = urllib2.Request(iterations_url, None, {'X-TrackerToken': token})
+    response = urllib2.urlopen(req)
+
+    iteration = json.loads(response.read())[0]
+
+    stories = iteration.get('stories')
+
+    startDate = datetime.datetime.strptime(iteration.get('start'), "%Y-%m-%dT%H:%M:%SZ")
+    endDate = datetime.datetime.strptime(iteration.get('finish'), "%Y-%m-%dT%H:%M:%SZ")
+
+    fp.write("ITERATION DETAILS\n")
+    fp.write("=================\n")
+    fp.write("#### Iteration Number : %s\n" % iteration.get('number'))
+    fp.write("#### Iteration Start  : %s\n" % startDate.strftime('%A, %B %d %Y'))
+    fp.write("#### Iteration Finish : %s\n" % endDate.strftime('%A, %B %d %Y'))
+    fp.write("#### Team Strength    : %s\n" % iteration.get('team_strength'))
+    fp.write("#### Number of Stories: %s\n" % len(stories))
+    fp.write("#### Iteration Points : %s\n" % getIterationPoints(stories))
+    fp.write("\n\n")
+
+    #print Bugs
+    printStories(fp, stories, "bug")
+    fp.write("\n\n")
+
+    #print Features
+    printStories(fp, stories, "feature")
+    fp.write("\n\n")
+
+    #print Chores
+    printStories(fp, stories, "chore")
+    fp.write("\n\n")
+
+    fp.close()
+
+if __name__ == "__main__":
+   main()

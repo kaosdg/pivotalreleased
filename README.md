@@ -1,5 +1,5 @@
-pivotalreleased
-===============
+pivotalmakerelease
+==================
 
 Using Pivotal Tracker and need to generate Release Notes? Try this script for a charm..
 
@@ -10,5 +10,5 @@ Original python script generously shared by Houssam (Sam) Kawtharani at PT's Get
 http://community.pivotaltracker.com/pivotal/topics/release_notes_generation
 under a "Release Notes Generation" thread.
 
-Posted here to cleanly and easily share. If you are Houssam, please feel free to take ownership. If you have something
-to contribute, please do!
+## Updates
+Updated to use the latest Pivotal JSON API, added some options and config, and output in Github MD format
