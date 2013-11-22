@@ -14,32 +14,24 @@ from lib.PvFormat import PvFormat
 from lib.PvGithubFormat import PvGithubFormat
 from lib.PvPlainTextFormat import PvPlainTextFormat
 
-'''
-@param stories the overall list of stories to operate against
-@param story_type the types of stories you want returned
-@return story_list the collated list of stories of type story_type
-'''
-
 
 def collate_stories(stories, story_type):
     story_list = []
+    valid_states = ['delivered', 'finished', 'accepted']
+
     for story in stories:
-        if story.get('story_type') == story_type:
+        s_type = story.get('story_type')
+        s_state = story.get('current_state')
+        if (s_type == story_type) and (s_state in valid_states):
             story_list.append(story)
 
     return story_list
 
 
-'''
-@param fp: The file pointer to use
-@param story: Story DOM object
-@param story_type: type of story {bug, chore, feature}
-'''
-
-
 def format_stories(pv_format, stories, story_type):
     formatted_stories = ''
-    if stories:
+
+    if stories and len(stories) > 0:
         file_pointer = StringIO()
         file_pointer.write(pv_format.format_story_details(story_type))
         for story in stories:

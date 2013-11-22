@@ -8,7 +8,7 @@ class PvGithubFormat(PvFormat):
     def format_project_details(self, project):
         file_pointer = StringIO()
         file_pointer.write('# %s\n' % project.get('header'))
-        file_pointer.write('## %s\n' % project.get('name'))
+        file_pointer.write('### %s\n' % project.get('name'))
 
         if project.get('description'):
             file_pointer.write('###### %s\n' % project.get('description'))
@@ -26,7 +26,7 @@ class PvGithubFormat(PvFormat):
         start_date = datetime.strptime(iteration.get('start'), "%Y-%m-%dT%H:%M:%SZ")
         end_date = datetime.strptime(iteration.get('finish'), "%Y-%m-%dT%H:%M:%SZ")
 
-        file_pointer.write("# %s\n" % iteration.get('header'))
+        file_pointer.write("## %s\n" % iteration.get('header'))
         file_pointer.write("#### Iteration Number : %s\n" % iteration.get('number'))
         file_pointer.write("#### Iteration Start  : %s\n" % start_date.strftime('%A, %B %d %Y'))
         file_pointer.write("#### Iteration Finish : %s\n" % end_date.strftime('%A, %B %d %Y'))
@@ -40,7 +40,7 @@ class PvGithubFormat(PvFormat):
 
     def format_story_details(self, story_type):
         file_pointer = StringIO()
-        file_pointer.write("## %sS\n" % story_type.upper())
+        file_pointer.write("### %sS\n" % story_type.upper())
         story_details = file_pointer.getvalue()
         file_pointer.close()
         return story_details
@@ -55,7 +55,7 @@ class PvGithubFormat(PvFormat):
         return self.format_story(feature)
 
     def format_story(self, story):
-        return "+ [[#%s]](%s) - %s \n" % (story.get('id'), story.get('url'), story.get('name'))
+        return "+ [[#%s]](%s) - %s\n" % (story.get('id'), story.get('url'), story.get('name'))
 
     @classmethod
     def footer(cls):
