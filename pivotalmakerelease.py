@@ -1,8 +1,4 @@
 #!/usr//bin/python
-'''
-Connects to Pivotal Tracker and generates the release notes for the current iteration
-@author: Karl C.
-'''
 import urllib2
 import sys
 import json
@@ -55,11 +51,12 @@ class ValidFormats(argparse.Action):
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(prog="pivotalmakerelease", description="Create release notes for a given Pivotal Tracker Project")
     parser.add_argument("project", help='The Project ID that you want to create release notes for.')
     parser.add_argument("-c", "--config", help="The configuration file to use [pivotal.config by default]")
     parser.add_argument("-o", "--ofile", help="The output file to write to [stdout by default]")
     parser.add_argument("-f", "--format", help="The output format you wish to use.", action=ValidFormats)
+    parser.add_argument("--no-footer", help="Whether or not to include the footer", action='store_true')
     args = parser.parse_args()
 
     configfile = 'pivotal.config'
@@ -127,8 +124,9 @@ def main():
     fp.write(format_stories(pv_format, chores, "chore"))
     fp.write("\n\n")
 
-    fp.write("\n\n\n")
-    fp.write(pv_format.footer())
+    if not args.no_footer:
+        fp.write("\n\n\n")
+        fp.write(pv_format.footer())
 
     fp.close()
 
