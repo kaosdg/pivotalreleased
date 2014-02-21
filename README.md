@@ -11,6 +11,7 @@ http://community.pivotaltracker.com/pivotal/topics/release_notes_generation
 under a "Release Notes Generation" thread.
 
 ##Usage
+```
 usage: pivotalmakerelease [-h] [-c CONFIG] [-o OFILE] [-f FORMAT]
                           [--no-footer]
                           project
@@ -32,7 +33,7 @@ optional arguments:
                         The output format you wish to use.
   --no-footer           Whether or not to include the footer
 
-
+```
 
 ## Updates
 Updated to use the latest Pivotal JSON API, added some options and config, and output in Github MD format
