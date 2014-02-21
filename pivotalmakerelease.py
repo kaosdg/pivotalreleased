@@ -1,66 +1,62 @@
 #!/usr//bin/python
-'''
-Connects to Pivotal Tracker and generates the release notes for the current iteration
-@author: Karl C.
-'''
 import urllib2
 import sys
-
 import json
+import argparse
+from cStringIO import StringIO
 
 import Config
-import datetime
-import argparse
+from lib.PvFormat import PvFormat
+from lib.PvGithubFormat import PvGithubFormat
+from lib.PvPlainTextFormat import PvPlainTextFormat
 
 
-'''
-@param fp: The file pointer to use
-@param story: Story DOM object
-@param story_type: type of story {bug, chore, feature}  
-'''
-
-
-def printStories(fp, stories, storyType):
-    validStoryTypes = ['feature', 'bug', 'chore']
-
-    fp.write("%sS\n" % storyType.upper())
-    fp.write("-" * (storyType.__len__() + 1))
-    fp.write("\n")
-
-    if storyType in validStoryTypes:
-        for story in stories:
-            s_type = story.get('story_type')
-            if s_type == storyType:
-                s_id = story.get('id')
-                s_name = story.get('name')
-                s_url = story.get('url')
-                fp.write("+ [#%s](%s) - %s \n" % (s_id, s_url, s_name))
-
-
-'''
-Gets total iteration points 
-@param stories: Stories DOM object 
-@return total_points: total iteration points
-'''
-
-
-def getIterationPoints(stories):
-    iter_points = 0
+def collate_stories(stories, story_type):
+    story_list = []
+    valid_states = ['delivered', 'finished', 'accepted']
 
     for story in stories:
         s_type = story.get('story_type')
+        s_state = story.get('current_state')
+        if (s_type == story_type) and (s_state in valid_states):
+            story_list.append(story)
 
-        if s_type == "feature":
-            iter_points += int(story.get('estimate'))
+    return story_list
 
-    return iter_points
+
+def format_stories(pv_format, stories, story_type):
+    formatted_stories = ''
+
+    if stories and len(stories) > 0:
+        file_pointer = StringIO()
+        file_pointer.write(pv_format.format_story_details(story_type))
+        for story in stories:
+            if story_type == 'feature':
+                formatted_story = pv_format.format_feature(story)
+            elif story_type == 'bug':
+                formatted_story = pv_format.format_bug(story)
+            elif story_type == 'chore':
+                formatted_story = pv_format.format_chore(story)
+
+            file_pointer.write(formatted_story)
+        formatted_stories = file_pointer.getvalue()
+        file_pointer.close()
+    return formatted_stories
+
+
+class ValidFormats(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        if values in PvFormat.valid_formats:
+            setattr(namespace, self.dest, values)
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(prog="pivotalmakerelease", description="Create release notes for a given Pivotal Tracker Project")
     parser.add_argument("project", help='The Project ID that you want to create release notes for.')
     parser.add_argument("-c", "--config", help="The configuration file to use [pivotal.config by default]")
     parser.add_argument("-o", "--ofile", help="The output file to write to [stdout by default]")
+    parser.add_argument("-f", "--format", help="The output format you wish to use.", action=ValidFormats)
+    parser.add_argument("--no-footer", help="Whether or not to include the footer", action='store_true')
     args = parser.parse_args()
 
     configfile = 'pivotal.config'
@@ -75,6 +71,11 @@ def main():
     else:
         fp = sys.stdout
 
+    pv_format = PvPlainTextFormat()
+    if args.format:
+        if args.format == 'github':
+            pv_format = PvGithubFormat()
+
     token = config.sectionmap("pivotal")['app_token']
     iterations_url = config.sectionmap("pivotal")['iteration_url'] % project_id
     project_url = config.sectionmap("pivotal")['project_url'] % project_id
@@ -87,15 +88,17 @@ def main():
         project = json.loads(proj_response.read())
     except urllib2.HTTPError as err:
         sys.stderr.write("%s\n" % str(err))
-        jsonErr = json.loads(err.read())
-        sys.stderr.write("%s - %s\n" % (jsonErr.get('error'), jsonErr.get('general_problem')))
-        sys.stderr.write("%s\n" % jsonErr.get('possible_fix'))
+        json_err = json.loads(err.read())
+        sys.stderr.write("%s - %s\n" % (json_err.get('error'), json_err.get('general_problem')))
+        sys.stderr.write("%s\n" % json_err.get('possible_fix'))
         sys.exit(2)
 
-    fp.write('# PROJECT DETAILS\n')
-    fp.write('## Project Name: %s\n' % project.get('name'))
-    fp.write('###### %s\n' % project.get('description'))
-    fp.write('\n\n')
+    project_header = config.sectionmap("output_details")['project_header']
+    iteration_header = config.sectionmap("output_details")['iteration_header']
+
+    project['header'] = project_header
+    fp.write(pv_format.format_project_details(project))
+    fp.write('\n')
 
     req = urllib2.Request(iterations_url, None, {'X-TrackerToken': token})
     response = urllib2.urlopen(req)
@@ -104,30 +107,26 @@ def main():
 
     stories = iteration.get('stories')
 
-    startDate = datetime.datetime.strptime(iteration.get('start'), "%Y-%m-%dT%H:%M:%SZ")
-    endDate = datetime.datetime.strptime(iteration.get('finish'), "%Y-%m-%dT%H:%M:%SZ")
+    iteration['header'] = iteration_header
+    fp.write(pv_format.format_iteration_details(iteration))
+    fp.write("\n")
 
-    fp.write("ITERATION DETAILS\n")
-    fp.write("=================\n")
-    fp.write("#### Iteration Number : %s\n" % iteration.get('number'))
-    fp.write("#### Iteration Start  : %s\n" % startDate.strftime('%A, %B %d %Y'))
-    fp.write("#### Iteration Finish : %s\n" % endDate.strftime('%A, %B %d %Y'))
-    fp.write("#### Team Strength    : %s\n" % iteration.get('team_strength'))
-    fp.write("#### Number of Stories: %s\n" % len(stories))
-    fp.write("#### Iteration Points : %s\n" % getIterationPoints(stories))
+    bugs = collate_stories(stories, "bug")
+    features = collate_stories(stories, "feature")
+    chores = collate_stories(stories, "chore")
+
+    fp.write(format_stories(pv_format, bugs, "bug"))
     fp.write("\n\n")
 
-    #print Bugs
-    printStories(fp, stories, "bug")
+    fp.write(format_stories(pv_format, features, "feature"))
     fp.write("\n\n")
 
-    #print Features
-    printStories(fp, stories, "feature")
+    fp.write(format_stories(pv_format, chores, "chore"))
     fp.write("\n\n")
 
-    #print Chores
-    printStories(fp, stories, "chore")
-    fp.write("\n\n")
+    if not args.no_footer:
+        fp.write("\n\n\n")
+        fp.write(pv_format.footer())
 
     fp.close()
 
